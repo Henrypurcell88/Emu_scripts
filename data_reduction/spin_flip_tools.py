@@ -1186,11 +1186,9 @@ def interact_J(d, outputfilename, time=0):
 
     return
             
-         
+      
         
-        
-        
-    
+
 def interact(d, outputfilename, basis_theta, basis_phi, time=0):
     #extract the data, depending on type
     if d[-3:]=='.h5':
@@ -1276,89 +1274,89 @@ def interact(d, outputfilename, basis_theta, basis_phi, time=0):
          
         
         
+#data_base_directory is the .h5 file with the raw simulation data in it
+#output_name is the name of the output if you want a specific one, otherwise it gives it the same name as the input h5 file and appends output_append at the end (so ijk.h5 becomes ijk_sfm.h5 by default)
+class Interact:
+    def __init__(self, data_base_directory, output_name = None, output_append = '_sfm_'):
+        self.data_base_directory = data_base_directory
+        
+        if output_name == None:
+            self.output_filename = data_base_directory[0:-3] + output_append
+        else: 
+            self.output_filename = output_name + output_append
+    
+    def is_h5(self):
+        if self.data_base_directory[-3:]=='.h5':
+            return True
+        else: 
+            return False
+    
+    #old interact function (computes everything that SpinParams computes and stores all of it instead of just storing J. theta, phi specify the direction for computations of , for example, \Sigma_\kappa
+    def run(self, anglename, theta=0, phi=0,):
+      
+        if self.is_h5() == True:      
+        #runs interact for h5 files, outputs [filename]_spin_flip_matrices.h5 in same location
+       
+        #find number of time intervals
+            File=h5py.File(self.data_base_directory,"r")
+            nt=len(np.array(File["t(s)"]))
+            File.close()
+
+            for t in range(0,nt):
+                interact(self.data_base_directory, self.output_filename + anglename + '.h5', theta, phi, t)
+        
+        else: #runs interact, for plt files. outputs h5 'spin_flip_matrices' file inside of data_base_directory
+            directory_list = sorted(glob.glob(self.data_base_directory+"plt*"))
+           
+            if os.path.exists(self.output_filename):
+                os.remove(self.output_filename)
+
+            for d in directory_list:
+                print(d)
+                with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
+                    executor.submit(interact, d, self.output_filename + anglename + '.h5', theta, phi)
+    
+    #interact_J, which just outputs the flux to save space
+    def run_J(self):
+      
+        if self.is_h5() == True:      
+        #runs interact for h5 files, outputs [filename]_spin_flip_matrices.h5 in same location
+       
+        #find number of time intervals
+            File=h5py.File(self.data_base_directory,"r")
+            nt=len(np.array(File["t(s)"]))
+            File.close()
+
+            for t in range(0,nt):
+                interact_J(self.data_base_directory, self.output_filename+'J.h5', t)
+        
+        else: #runs interact, for plt files. outputs h5 'spin_flip_matrices' file inside of data_base_directory
+            directory_list = sorted(glob.glob(self.data_base_directory+"plt*"))
+           
+            if os.path.exists(self.output_filename):
+                os.remove(self.output_filename)
+
+            for d in directory_list:
+                print(d)
+                with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
+                    executor.submit(interact_J, d, self.output_filename)
+          
         
     
+        
+#inputdatafile carries files of the form /i*j*k*/allData.h5. output_loc + output_name is the file where you want to store the output h5 files
+class Multipoint_interact:
+    def __init__(self, inputdatafile, output_loc, output_name):
+        self.inputdatafile = inputdatafile
+        self.filelist = glob.glob(self.inputdatafile + "/i*j*k*/allData.h5")
+        self.outputdatafile = output_loc + output_name
+        
+    def interact(self):
+        os.mkdir(self.outputdatafile)
+        
+        for h5file in self.filelist:
+            coords = h5file[-26:-11] #just the coordinate part
+            Interact(h5file, output_name = self.outputdatafile + coords, output_append = '_sfm').run_J()
+        
+               
     
-    
-# Input: what folder do we want to process?
-def interact_scalar(d, outputfilename, basis_theta, basis_phi):
-    # Read in the data
-    eds = emu.EmuDataset(d)
-    nz = eds.Nz
-
-    # open the hdf5 file
-    outputfile = h5py.File(outputfilename, "a")
-
-    t = eds.ds.current_time
-    append_to_hdf5(outputfile,"t(s)",t)
-
-    # write the free Hamiltonians
-    if "H_R_free(eV)" not in outputfile:
-            outputfile["H_R_free(eV)"] = H_R_free
-            outputfile["H_L_free(eV)"] = H_L_free
-
-    # write the z grid
-    if "z(cm)" not in outputfile:
-            outputfile["z(cm)"] = np.arange(eds.dz/2., nz*eds.dz, eds.dz)
-    
-    # [spacetime component, f1, f2, z]
-    #particle, antiparticle and total neutrino four currents respectively
-    J_p = four_current_eds(eds)[0]
-    J_a = four_current_eds(eds)[1] 
-    J = J_p-np.conj(J_a)
-    
-    append_to_hdf5_1D_scalar(outputfile, "J_p(eV^3)", J_p)
-    append_to_hdf5_1D_scalar(outputfile, "J_a(eV^3)", J_a)
-    append_to_hdf5_1D_scalar(outputfile, "J(eV^3)", J)
-
-    # [spacetime, f1, f2, z]
-    S_R,S_L=sigma(J)
-    append_to_hdf5_1D_scalar(outputfile, "S_R(eV)", S_R)
-    append_to_hdf5_1D_scalar(outputfile, "S_L(eV)", S_L)
-
-    # define the basis as along z
-    basis = Basis(basis_theta,basis_phi)
-    
-    # precompute Sigma [f1, f2, z]
-    S_R_plus = plus(S_R, basis)
-    S_L_plus = plus(S_L, basis)
-    S_R_minus = minus(S_R, basis)
-    S_L_minus = minus(S_L, basis)
-    S_R_kappa = kappa(S_R, basis)
-    S_L_kappa = kappa(S_L, basis)
-    append_to_hdf5_scalar(outputfile, "S_R_plus(eV)", S_R_plus)
-    append_to_hdf5_scalar(outputfile, "S_L_plus(eV)", S_L_plus)
-    append_to_hdf5_scalar(outputfile, "S_R_minus(eV)", S_R_minus)
-    append_to_hdf5_scalar(outputfile, "S_L_minus(eV)", S_L_minus)
-    append_to_hdf5_scalar(outputfile, "S_R_kappa(eV)", S_R_kappa)
-    append_to_hdf5_scalar(outputfile, "S_L_kappa(eV)", S_L_kappa)
-    
-    ## Helicity-Flip Hamiltonian ## [f1, f2, z]
-    MSl = np.array([ np.matmul(conj(M),S_L_plus[:,:,n]) for n in range(nz) ])
-    SrM = np.array([ np.matmul(S_R_plus[:,:,n],conj(M))  for n in range(nz) ])
-    H_LR = (-1/p_abs)*(SrM-MSl)
-    H_LR = H_LR.transpose((1,2,0))
-    append_to_hdf5_scalar(outputfile, "H_LR(eV)", H_LR)    
-    
-    # plusminus term [f1, f2, z]
-    H_R_plusminus = 2./p_abs * np.array([
-            np.matmul(S_R_plus[:,:,z], S_R_minus[:,:,z])
-            for z in range(nz)]).transpose((1,2,0))
-    H_L_minusplus = 2./p_abs * np.array([
-            np.matmul(S_L_minus[:,:,z], S_L_plus[:,:,z])
-            for z in range(nz)]).transpose((1,2,0))
-    append_to_hdf5_scalar(outputfile, "H_R_plusminus(eV)", H_R_plusminus)
-    append_to_hdf5_scalar(outputfile, "H_L_minusplus(eV)", H_L_minusplus)
-    
-    ##H_R/H_L in the (0,0,10**7) basis (derivatives along x1 and x2 are 0 for 1d setup)
-    H_Rz = S_R_kappa + H_R_free[:,:,np.newaxis] + H_R_plusminus
-    H_Lz = S_L_kappa + H_L_free[:,:,np.newaxis] + H_L_minusplus
-    append_to_hdf5_scalar(outputfile, "H_Rz(eV)", H_Rz)
-    append_to_hdf5_scalar(outputfile, "H_Lz(eV)", H_Lz)
-
-    # close the output file
-    outputfile.close()
-    return
-         
-
-         
